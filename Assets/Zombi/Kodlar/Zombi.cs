@@ -6,6 +6,7 @@ public class Zombi : MonoBehaviour
     public float ZombiHP = 100;
     Animator zombiAnim;
     bool zombiOlu;
+    bool deathNotified;
     public float KovalamaMesafe;
     public float saldırmaMesafesi;
     NavMeshAgent zombiNavMash;
@@ -29,6 +30,15 @@ public class Zombi : MonoBehaviour
         if (ZombiHP <= 0)
         {
             zombiOlu = true;
+            if (!deathNotified)
+            {
+                var spawner = FindObjectOfType<ZombieSpawner>();
+                if (spawner != null)
+                {
+                    spawner.NotifyDeathStart(this.gameObject);
+                }
+                deathNotified = true;
+            }
         }
         if (zombiOlu == true)
         {

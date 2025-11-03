@@ -42,6 +42,8 @@ public class AtesSistemi : MonoBehaviour
                 if (sarjor > 0)
                 {
                     anim.SetBool("atesEt", true);
+                    // Upper-body firing flag to allow shooting while running/jumping
+                    anim.SetBool("IsFiring", true);
                 }
                 if (sarjor < 0)
                 {
@@ -56,6 +58,7 @@ public class AtesSistemi : MonoBehaviour
             else if (Input.GetMouseButtonUp(0))
             {
                 anim.SetBool("atesEt", false);
+                anim.SetBool("IsFiring", false);
             }
 
         }
@@ -100,6 +103,18 @@ public class AtesSistemi : MonoBehaviour
     public float GetCephane()
     {
         return cephane;
+    }
+
+
+    // Adds ammo to reserve; optionally triggers reload animation if magazine is empty
+    public void AddAmmo(int amount, bool autoReload = true)
+    {
+        if (amount <= 0) return;
+        cephane += amount;
+        if (autoReload && sarjor <= 0 && cephane > 0)
+        {
+            anim.SetBool("sarjorDegistirme", true);
+        }
     }
 
 
