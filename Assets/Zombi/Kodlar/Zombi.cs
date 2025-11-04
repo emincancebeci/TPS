@@ -87,7 +87,7 @@ public class Zombi : MonoBehaviour
     IEnumerator YokOl()
 
     {
-        yield return new WaitForSeconds(5);
+        yield return new WaitForSeconds(1);
         Destroy(this.gameObject);
     }
     public void HasarAl()
