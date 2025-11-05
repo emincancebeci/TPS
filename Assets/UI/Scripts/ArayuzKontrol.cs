@@ -6,7 +6,7 @@ public class ArayuzKontrol : MonoBehaviour
 
     public Text mermiText;
     public Text saglikText;
-    public GameObject sahteMenu;
+    public GameObject PauseMenu;
 
     bool OyunDurdu;
     GameObject oyuncu;
@@ -30,21 +30,26 @@ public class ArayuzKontrol : MonoBehaviour
             }
             else if (OyunDurdu == false)
             {
-                OyunuDurdu();
+                OyunuDurdur();
             }
 
         }
     }
     public void OyunuDevamEttir()
     {
-        sahteMenu.SetActive(false);
+        PauseMenu.SetActive(false);
         Time.timeScale = 1;
         OyunDurdu = false;
     }
-    public void OyunuDurdu()
+    public void OyunuDurdur()
     {
-        sahteMenu.SetActive(true);
+        PauseMenu.SetActive(true);
         Time.timeScale = 0;
         OyunDurdu = true;
+    }
+
+    public void OyundanCik()
+    {
+        Application.Quit();
     }
 }
