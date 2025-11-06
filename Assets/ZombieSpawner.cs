@@ -1,12 +1,13 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.SceneManagement;
 
 public class ZombieSpawner : MonoBehaviour
 {
     [Header("Spawn Settings")]
     [SerializeField] private GameObject zombiePrefab;
-    [SerializeField] private int zombieCount = 50;
+    [SerializeField] private int zombieCount = 20;
     [SerializeField] private Vector3 areaCenter;
     [SerializeField] private Vector3 areaSize = new Vector3(100f, 10f, 100f);
     [SerializeField] private bool trySnapToNavMesh = true;
@@ -21,6 +22,7 @@ public class ZombieSpawner : MonoBehaviour
 
     private readonly List<GameObject> spawned = new List<GameObject>();
     private readonly HashSet<GameObject> notifiedDeath = new HashSet<GameObject>();
+    private bool gameOverTriggered;
 
     // Public read-only accessors for UI
     public int AliveZombies => aliveZombies;
@@ -103,6 +105,17 @@ public class ZombieSpawner : MonoBehaviour
 
         notifiedDeath.Add(zombie);
         aliveZombies = Mathf.Max(0, aliveZombies - 1);
+        if (!gameOverTriggered && aliveZombies == 0)
+        {
+            gameOverTriggered = true;
+            TryTriggerGameOver();
+        }
+    }
+
+    private void TryTriggerGameOver()
+    {
+        // Load scene index 0 (Main Menu) as Game Over.
+        SceneManager.LoadScene(0);
     }
 
     private Vector3 GetRandomPointInArea()
