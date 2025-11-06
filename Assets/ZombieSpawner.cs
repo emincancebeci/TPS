@@ -52,6 +52,13 @@ public class ZombieSpawner : MonoBehaviour
             timeLeft -= Time.deltaTime;
             if (timeLeft < 0f) timeLeft = 0f;
         }
+        if (!gameOverTriggered && timeLeft == 0f)
+        {
+            gameOverTriggered = true;
+            Time.timeScale = 1f;
+            SceneManager.LoadScene(0);
+            return;
+        }
 
         // Cleanup destroyed references to avoid leaks; aliveZombies is driven by notifications
         for (int i = spawned.Count - 1; i >= 0; i--)
@@ -115,6 +122,7 @@ public class ZombieSpawner : MonoBehaviour
     private void TryTriggerGameOver()
     {
         // Load scene index 0 (Main Menu) as Game Over.
+        Time.timeScale = 1f;
         SceneManager.LoadScene(0);
     }
 

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class KarakrerKontrol : MonoBehaviour
 {
@@ -10,6 +11,7 @@ public class KarakrerKontrol : MonoBehaviour
     
     bool hayattaMi;
     private float saglik = 100;
+    private bool deathHandled;
 
     
     
@@ -26,11 +28,23 @@ public class KarakrerKontrol : MonoBehaviour
         {
             hayattaMi = false;
             anim.SetBool("yasiyorMu", hayattaMi);
+            if (!deathHandled)
+            {
+                deathHandled = true;
+                StartCoroutine(YenidenBaslatGecikmeli());
+            }
         }
         if (hayattaMi == true)
         {
             Hareket();
         }
+    }
+
+    System.Collections.IEnumerator YenidenBaslatGecikmeli()
+    {
+        yield return new WaitForSeconds(1.0f);
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(0);
     }
 
     public float GetSaglik()
