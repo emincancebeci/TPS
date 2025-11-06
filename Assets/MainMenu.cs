@@ -21,7 +21,7 @@ public class MainMenu : MonoBehaviour
 
     public void PlayGame()
     {
-        Time.timeScale = 1f; // ensure not paused from previous session
+        Time.timeScale = 1f; 
         SceneManager.LoadSceneAsync(1);
     }
 
