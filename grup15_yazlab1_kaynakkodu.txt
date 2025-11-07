@@ -1,0 +1,753 @@
+[KARAKTERKONTROL.CS]
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+public class KarakrerKontrol : MonoBehaviour
+{
+    Animator anim;
+
+    [SerializeField]
+    private float KarakterHiz;
+    [SerializeField] private float sprintMultiplier = 1.5f;
+    
+    bool hayattaMi;
+    private float saglik = 100;
+    private bool deathHandled;
+
+    
+    
+    void Start()
+    {
+        anim = this.GetComponent<Animator>();
+        hayattaMi = true;
+
+    }
+
+    void Update()
+    {
+        if (saglik <= 0)
+        {
+            hayattaMi = false;
+            anim.SetBool("yasiyorMu", hayattaMi);
+            if (!deathHandled)
+            {
+                deathHandled = true;
+                StartCoroutine(YenidenBaslatGecikmeli());
+            }
+        }
+        if (hayattaMi == true)
+        {
+            Hareket();
+        }
+    }
+
+    System.Collections.IEnumerator YenidenBaslatGecikmeli()
+    {
+        yield return new WaitForSeconds(1.0f);
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(0);
+    }
+
+    public float GetSaglik()
+    {
+        return saglik;
+    }
+    public bool YasiyorMu()
+    {
+        return hayattaMi;
+    }
+    public void HasarAl()
+    {
+        saglik -= Random.Range(5, 10);
+    }
+    void Hareket()
+    {
+        float yatay = Input.GetAxis("Horizontal");
+        float dikey = Input.GetAxis("Vertical");
+
+        // Animator inputs
+        anim.SetFloat("Horizontal", yatay);
+        anim.SetFloat("Vertical", dikey);
+
+        // Sprint (Left Shift) – sadece hız çarpanı
+        bool isSprinting = Input.GetKey(KeyCode.LeftShift);
+        float speed = KarakterHiz * (isSprinting ? sprintMultiplier : 1f);
+
+        // Yalnızca yatay düzlemde hareket
+        this.gameObject.transform.Translate(yatay * speed * Time.deltaTime, 0, dikey * speed * Time.deltaTime);
+
+        // İsteğe bağlı: hareket yönüne bakma
+        Vector3 planar = new Vector3(yatay, 0f, dikey);
+        if (planar.sqrMagnitude > 0.001f) transform.forward = planar.normalized;
+    }
+
+
+
+}
+
+
+[KAMERAKONTROL.CS]
+
+
+using UnityEngine;
+
+public class KameraKontrol : MonoBehaviour
+{
+
+
+    public Transform hedef;
+    public Vector3 hedefMesafe = new Vector3(-1.5f, 2.5f, -3.8f); // Görüntüdeki gibi TPS kamera açısı
+    float fareX, fareY;
+    [SerializeField]
+    private float fareHassasiyet;
+
+    Vector3 objRot;
+    public Transform karakterVucut;
+    KarakrerKontrol karakterKontrol;
+
+    void Start()
+    {
+        Cursor.lockState = CursorLockMode.Locked;
+        karakterKontrol = hedef.GetComponent<KarakrerKontrol>();
+    }
+
+    void Update()
+    {
+
+    }
+
+    void LateUpdate()
+    {
+        // Karakter ölüyse kamera hareket etmesin
+        if (karakterKontrol != null && !karakterKontrol.YasiyorMu())
+        {
+            return;
+        }
+
+        this.transform.position = Vector3.Lerp(this.transform.position, hedef.position + hedefMesafe, Time.deltaTime * 10);
+        fareX += Input.GetAxis("Mouse X") * fareHassasiyet;
+        fareY -= Input.GetAxis("Mouse Y") * fareHassasiyet;
+
+        // Y ekseni için sınırlar (yukarı-aşağı)
+        if (fareY >= 25)
+        {
+            fareY = 25;
+        }
+        if (fareY <= -40)
+        {
+            fareY = -40;
+        }
+
+
+
+
+        this.transform.eulerAngles = new Vector3(fareY, fareX, 0);
+        hedef.transform.eulerAngles = new Vector3(0, fareX, 0);
+
+
+
+        Vector3 gecici = this.transform.localEulerAngles;
+        gecici.z = 0;
+        gecici.y = this.transform.localEulerAngles.y;
+        gecici.x = this.transform.localEulerAngles.x + 10;
+        objRot = gecici;
+        karakterVucut.transform.eulerAngles = objRot;
+
+    }
+}
+
+
+[ZOMBIEDEATHNOTIFIER.CS]
+
+using UnityEngine;
+
+public class ZombieDeathNotifier : MonoBehaviour
+{
+    private ZombieSpawner spawner;
+
+    public void SetSpawner(ZombieSpawner s)
+    {
+        spawner = s;
+    }
+
+    // Call this from the death animation (Animation Event at the start of death)
+    public void OnDeathAnimationStart()
+    {
+        if (spawner == null)
+        {
+            spawner = FindObjectOfType<ZombieSpawner>();
+        }
+        if (spawner != null)
+        {
+            spawner.NotifyDeathStart(gameObject);
+        }
+    }
+}
+
+
+[ZOMBIESPAWNER.CS]
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.SceneManagement;
+
+public class ZombieSpawner : MonoBehaviour
+{
+    [Header("Spawn Settings")]
+    [SerializeField] private GameObject zombiePrefab;
+    [SerializeField] private int zombieCount = 20;
+    [SerializeField] private Vector3 areaCenter;
+    [SerializeField] private Vector3 areaSize = new Vector3(100f, 10f, 100f);
+    [SerializeField] private bool trySnapToNavMesh = true;
+    [SerializeField] private float navMeshMaxSampleDistance = 5f;
+
+    [Header("Round Settings")]
+    [SerializeField] private float roundDurationSeconds = 180f; // 3 minutes default
+
+    [Header("Runtime State (Read-Only)")]
+    [SerializeField] private int aliveZombies;
+    [SerializeField] private float timeLeft;
+
+    private readonly List<GameObject> spawned = new List<GameObject>();
+    private readonly HashSet<GameObject> notifiedDeath = new HashSet<GameObject>();
+    private bool gameOverTriggered;
+
+    // Public read-only accessors for UI
+    public int AliveZombies => aliveZombies;
+    public float TimeLeft => timeLeft;
+
+    private void Reset()
+    {
+        areaCenter = transform.position;
+    }
+
+    private void Start()
+    {
+        // Use spawner transform as default center if none provided
+        if (areaCenter == Vector3.zero)
+        {
+            areaCenter = transform.position;
+        }
+
+        timeLeft = roundDurationSeconds;
+        SpawnZombiesOnce();
+    }
+
+    private void Update()
+    {
+        if (timeLeft > 0f)
+        {
+            timeLeft -= Time.deltaTime;
+            if (timeLeft < 0f) timeLeft = 0f;
+        }
+        if (!gameOverTriggered && timeLeft == 0f)
+        {
+            gameOverTriggered = true;
+            Time.timeScale = 1f;
+            SceneManager.LoadScene(0);
+            return;
+        }
+
+        // Cleanup destroyed references to avoid leaks; aliveZombies is driven by notifications
+        for (int i = spawned.Count - 1; i >= 0; i--)
+        {
+            if (spawned[i] == null)
+            {
+                spawned.RemoveAt(i);
+            }
+        }
+    }
+
+    private void SpawnZombiesOnce()
+    {
+        if (zombiePrefab == null)
+        {
+            Debug.LogWarning("ZombieSpawner: zombiePrefab is not assigned.");
+            return;
+        }
+
+        for (int i = 0; i < zombieCount; i++)
+        {
+            Vector3 randomPos = GetRandomPointInArea();
+
+            if (trySnapToNavMesh && NavMeshReady())
+            {
+                if (NavMesh.SamplePosition(randomPos, out NavMeshHit hit, navMeshMaxSampleDistance, NavMesh.AllAreas))
+                {
+                    randomPos = hit.position;
+                }
+            }
+
+            GameObject z = Instantiate(zombiePrefab, randomPos, Quaternion.identity);
+            // Ensure a notifier exists so animation events can call back into the spawner
+            var notifier = z.GetComponent<ZombieDeathNotifier>();
+            if (notifier == null)
+            {
+                notifier = z.AddComponent<ZombieDeathNotifier>();
+            }
+            notifier.SetSpawner(this);
+            spawned.Add(z);
+        }
+
+        aliveZombies = spawned.Count;
+    }
+
+    // Called by ZombieDeathNotifier when death animation starts
+    public void NotifyDeathStart(GameObject zombie)
+    {
+        if (zombie == null) return;
+        if (notifiedDeath.Contains(zombie)) return;
+
+        notifiedDeath.Add(zombie);
+        aliveZombies = Mathf.Max(0, aliveZombies - 1);
+        if (!gameOverTriggered && aliveZombies == 0)
+        {
+            gameOverTriggered = true;
+            TryTriggerGameOver();
+        }
+    }
+
+    private void TryTriggerGameOver()
+    {
+        // Load scene index 0 (Main Menu) as Game Over.
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(0);
+    }
+
+    private Vector3 GetRandomPointInArea()
+    {
+        Vector3 half = areaSize * 0.5f;
+        float x = Random.Range(-half.x, half.x);
+        float y = Random.Range(-half.y, half.y);
+        float z = Random.Range(-half.z, half.z);
+        return areaCenter + new Vector3(x, y, z);
+    }
+
+    private bool NavMeshReady()
+    {
+        // Basic check to avoid errors if NavMesh components are missing
+        return NavMeshSurfaceExists() || NavMeshHasData();
+    }
+
+    private bool NavMeshHasData()
+    {
+        // True in baked scenes
+        return NavMesh.CalculateTriangulation().vertices != null && NavMesh.CalculateTriangulation().vertices.Length > 0;
+    }
+
+    private bool NavMeshSurfaceExists()
+    {
+        // If using NavMeshComponents package, presence of any surface implies intent to use navmesh
+        var surfaces = FindObjectsByType<Component>(FindObjectsSortMode.None);
+        for (int i = 0; i < surfaces.Length; i++)
+        {
+            if (surfaces[i] == null) continue;
+            if (surfaces[i].GetType().Name == "NavMeshSurface") return true;
+        }
+        return false;
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        Gizmos.color = new Color(0f, 1f, 0f, 0.15f);
+        Vector3 center = areaCenter == Vector3.zero ? transform.position : areaCenter;
+        Gizmos.DrawCube(center, areaSize);
+        Gizmos.color = new Color(0f, 0.7f, 0f, 1f);
+        Gizmos.DrawWireCube(center, areaSize);
+    }
+}
+
+
+[ZOMBI.CS]
+using System.Collections;
+using UnityEngine;
+using UnityEngine.AI;
+public class Zombi : MonoBehaviour
+{
+    public float ZombiHP = 100;
+    Animator zombiAnim;
+    bool zombiOlu;
+    bool deathNotified;
+    public float KovalamaMesafe;
+    public float saldırmaMesafesi;
+    NavMeshAgent zombiNavMash;
+
+    GameObject hedefOyuncu;
+
+    AudioSource sesKaynagi;
+    public AudioClip saldirmaSesi;
+    void Start()
+    {
+        zombiAnim = this.GetComponent<Animator>();
+        hedefOyuncu = GameObject.Find("Ajan");
+        zombiNavMash = this.GetComponent<NavMeshAgent>();
+        sesKaynagi = this.GetComponent<AudioSource>();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+
+        if (ZombiHP <= 0)
+        {
+            zombiOlu = true;
+            if (!deathNotified)
+            {
+                var spawner = FindObjectOfType<ZombieSpawner>();
+                if (spawner != null)
+                {
+                    spawner.NotifyDeathStart(this.gameObject);
+                }
+                deathNotified = true;
+            }
+        }
+        if (zombiOlu == true)
+        {
+            zombiAnim.SetBool("oldu", true);
+            StartCoroutine(YokOl());
+        }
+        else
+        {
+            //ileride hareket kodunu buraya yazacağız
+            float mesafe = Vector3.Distance(this.transform.position, hedefOyuncu.transform.position);
+            if (mesafe < KovalamaMesafe)
+            {
+                zombiNavMash.isStopped = false;
+                zombiNavMash.SetDestination(hedefOyuncu.transform.position);
+                zombiAnim.SetBool("yuruyor", true);
+                this.transform.LookAt(hedefOyuncu.transform.position);
+                //yürüme animasyonu
+            }
+            else
+            {
+                zombiNavMash.isStopped = true;
+                zombiAnim.SetBool("yuruyor", false);
+                zombiAnim.SetBool("saldiriyor", false);
+                //durma animasyonu
+            }
+            if (mesafe < saldırmaMesafesi)
+            {
+                this.transform.LookAt(hedefOyuncu.transform.position);
+                zombiNavMash.isStopped = true;
+                zombiAnim.SetBool("yuruyor", false);
+                zombiAnim.SetBool("saldiriyor", true);
+                //vurma animasyonu
+            }
+
+        }
+    }
+    public void HasarVerSes()
+    {
+        sesKaynagi.PlayOneShot(saldirmaSesi);
+    }
+    public void HasarVer()
+    {
+        hedefOyuncu.GetComponent<KarakrerKontrol>().HasarAl();
+    }
+
+    IEnumerator YokOl()
+
+    {
+        yield return new WaitForSeconds(1);
+        Destroy(this.gameObject);
+    }
+    public void HasarAl()
+    {
+        ZombiHP -= Random.Range(15, 25);
+    }
+}
+
+[ZOMBIEHUD.CS]
+using TMPro;
+using UnityEngine;
+
+public class ZombieHUD : MonoBehaviour
+{
+    [Header("References")]
+    [SerializeField] private ZombieSpawner spawner;
+    [SerializeField] private TMP_Text zombiesText;
+    [SerializeField] private TMP_Text timeText;
+
+    private void Awake()
+    {
+        if (spawner == null)
+        {
+            spawner = FindObjectOfType<ZombieSpawner>();
+        }
+    }
+
+    private void Update()
+    {
+        if (spawner == null) return;
+
+        if (zombiesText != null)
+        {
+            zombiesText.text = $"Kalan Zombi: {spawner.AliveZombies}";
+        }
+
+        if (timeText != null)
+        {
+            timeText.text = FormatTime(spawner.TimeLeft);
+        }
+    }
+
+    private string FormatTime(float seconds)
+    {
+        if (seconds < 0f) seconds = 0f;
+        int m = Mathf.FloorToInt(seconds / 60f);
+        int s = Mathf.FloorToInt(seconds % 60f);
+        return $"Süre: {m:00}:{s:00}";
+    }
+}
+
+
+[ARAYUZKONTROL.CS]
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
+
+public class ArayuzKontrol : MonoBehaviour
+{
+
+    public Text mermiText;
+    public Text saglikText;
+    public GameObject PauseMenu;
+
+    bool OyunDurdu;
+    GameObject oyuncu;
+
+    void Start()
+    {
+        oyuncu = GameObject.Find("Ajan");
+        // UI 'ın click alması icin EventSystem  
+        if (FindObjectOfType<EventSystem>() == null)
+        {
+            var es = new GameObject("EventSystem");
+            es.AddComponent<EventSystem>();
+            es.AddComponent<StandaloneInputModule>();
+        }
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        mermiText.text = oyuncu.GetComponent<AtesSistemi>().GetSarjor().ToString() + "/" + oyuncu.GetComponent<AtesSistemi>().GetCephane().ToString();
+
+        saglikText.text = "Hp:" + oyuncu.GetComponent<KarakrerKontrol>().GetSaglik();
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            if (OyunDurdu == true)
+            {
+                OyunuDevamEttir();
+            }
+            else if (OyunDurdu == false)
+            {
+                OyunuDurdur();
+            }
+
+        }
+    }
+    public void OyunuDevamEttir()
+    {
+        PauseMenu.SetActive(false);
+        Time.timeScale = 1;
+        OyunDurdu = false;
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+    }
+    public void OyunuDurdur()
+    {
+        PauseMenu.SetActive(true);
+        Time.timeScale = 0;
+        OyunDurdu = true;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
+    public void OyundanCik()
+    {
+        Time.timeScale = 1f;
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
+
+    // UI Button: Restart
+    public void RestartGame()
+    {
+        Time.timeScale = 1f;
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+        Scene current = SceneManager.GetActiveScene();
+        SceneManager.LoadScene(current.buildIndex);
+    }
+}
+
+
+[MAINMENU.CS]
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.EventSystems;
+
+public class MainMenu : MonoBehaviour
+{ 
+    void Start()
+    {
+        Time.timeScale = 1f;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+        if (FindObjectOfType<EventSystem>() == null)
+        {
+            var es = new GameObject("EventSystem");
+            es.AddComponent<EventSystem>();
+            es.AddComponent<StandaloneInputModule>();
+        }
+    }
+
+    public void PlayGame()
+    {
+        Time.timeScale = 1f; 
+        SceneManager.LoadSceneAsync(1);
+    }
+
+    public void QuitGame()
+    {
+        Time.timeScale = 1f;
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
+
+}
+
+
+[ATESSISTEMI.CS]
+using Unity.Mathematics;
+using UnityEngine;
+
+public class AtesSistemi : MonoBehaviour
+{
+
+
+
+    public Camera kamera;
+    public LayerMask zombiKatman;
+    KarakrerKontrol hpKontrol;
+    public ParticleSystem muzzleFlash;
+    Animator anim;
+
+    private float sarjor = 15;
+    private float cephane = 150;
+    private float sarjorKapasitesi = 15;
+
+    AudioSource sesKaynagi;
+    public AudioClip atesSes;
+    public AudioClip reloadSes;
+
+
+    void Start()
+    {
+        kamera = Camera.main;
+        hpKontrol = this.gameObject.GetComponent<KarakrerKontrol>();
+        anim = this.gameObject.GetComponent<Animator>();
+        sesKaynagi = this.gameObject.GetComponent<AudioSource>();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+
+        if (hpKontrol.YasiyorMu() == true)
+        {
+
+            if (Input.GetMouseButton(0))
+            {
+
+                if (sarjor > 0)
+                {
+                    anim.SetBool("atesEt", true);
+                    // Upper-body firing flag to allow shooting while running/jumping
+                    anim.SetBool("IsFiring", true);
+                }
+                if (sarjor < 0)
+                {
+                    anim.SetBool("atesEt", false);
+                }
+                if (sarjor <= 0 && cephane > 0)
+                {
+                    anim.SetBool("sarjorDegistirme", true);
+
+                }
+            }
+            else if (Input.GetMouseButtonUp(0))
+            {
+                anim.SetBool("atesEt", false);
+                anim.SetBool("IsFiring", false);
+            }
+
+        }
+    }
+    public void SarjorDegistirmeSes()
+    {
+        sesKaynagi.PlayOneShot(reloadSes);
+        sesKaynagi.volume = 0.6f;
+    }
+
+    public void SarjorDegistirme()
+    {
+        sesKaynagi.volume = 1f;
+        cephane -= sarjorKapasitesi - sarjor;
+        sarjor = sarjorKapasitesi;
+        anim.SetBool("sarjorDegistirme", false);
+    }
+    public void AtesEtme()
+    {
+        if (sarjor > 0)
+        {
+            sarjor--;
+            muzzleFlash.Play();
+            sesKaynagi.PlayOneShot(atesSes);
+
+            // Crosshair'ın yeni pozisyonuna göre ışın yolla (Y değeri 0.7f = üst kısım)
+            Ray ray = kamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
+            RaycastHit hit;
+            if (Physics.Raycast(ray, out hit, Mathf.Infinity, zombiKatman))
+            {
+                hit.collider.gameObject.GetComponent<Zombi>().HasarAl();
+            }
+        }
+
+
+    }
+
+    public float GetSarjor()
+    {
+        return sarjor;
+    }
+    public float GetCephane()
+    {
+        return cephane;
+    }
+
+
+    // Adds ammo to reserve; optionally triggers reload animation if magazine is empty
+    public void AddAmmo(int amount, bool autoReload = true)
+    {
+        if (amount <= 0) return;
+        cephane += amount;
+        if (autoReload && sarjor <= 0 && cephane > 0)
+        {
+            anim.SetBool("sarjorDegistirme", true);
+        }
+    }
+
+
+}
+
